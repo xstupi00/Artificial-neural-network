@@ -1,0 +1,159 @@
+Architektura výpočetních systému (AVS 2019)
+Projekt č. 1 (ANN)
+Login: xstupi00
+
+U každého kroku proveďte měření vypočtu pro dataset dostupný na https://www.fit.vutbr.cz/~ibordovsky/avs/datasets/bigDataset.h5
+Správnost výpočtu můžete porovnat pomocí python 3 skriptu "Scripts/compareOutputs.py" s referenčním řešením.
+Pro bigDataset je dostupný na https://www.fit.vutbr.cz/~ibordovsky/avs/datasets/bigRefOutput.h5
+
+Krok 0: základní implementace
+=============================
+Celkový čas [s]:                        193.259s    (network :: wall time)
+Výkon skalárních operací [MFLOPS]:      36.1277     (derived_FLOPS)
+Výkon vektorových operací [MFLOPS]:     1143.52     (derived_SP_vector_FLOPS)
+L1 miss [%]:                            85.5%       (derived_L1_DMR)
+L2 miss [%]:                            99.9%       (derived_L2_DMR)
+L3 miss [%]:                            0.00729%    (derived_L3_TMR)
+
+Které PAPI_EVENTS jste použili pro získání počtu výpadků v paměti?
+HW countery pro L1: PAPI_L1_DCM|PAPI_LD_INS|PAPI_SR_INS
+HW countery pro L2: PAPI_L2_DCA|PAPI_L2_DCM
+HW countery pro L3: PAPI_L3_TCA|PAPI_L3_TCM
+
+
+Krok 1: vektorizace funkcí
+===================================
+Celkový čas [s]:                         89.2654s   (network :: wall time)
+Výkon skalárních operací [MFLOPS]:       0.122315   (derived_FLOPS)
+Výkon vektorových operací [MFLOPS]:      2397.48    (derived_SP_vector_FLOPS)
+L1 miss [%]:                             27.4%      (derived_L1_DMR)
+L2 miss [%]:                             99.7%      (derived_L2_DMR)
+L3 miss [%]:                             0.0228%    (derived_L3_TMR)
+
+Jaké pragmy bylo potřeba přidat?
+===================================
+-> #pragma omp simd (loop main.cpp:273)
+-> #pragma omp declare simd (evalNeuron neuron.h:17)
+
+Které dovětky k pragmám jste použili a jaky měly vliv na kompilátorem generované funkce? (main.cpp.optrpt/neuron.cpp.optrpt)
+===================================
+-> uniform(inputSize, neuronCount, input, weight) - každý argument zoznamu má nemennú hodnotu pre všetky súčasné vyvolania funkcie počas vykonavánia jedinej SIMD slučky
+-> linear(neuronId) - uvedená premenná má lineárny vzťah vzhľadom k iteračnému priestoru
+-> simdlen(8) - určuje preferovaný počet súbežných argumentov pre funkciu, to znamená počet iterácií, ktoré sú požadované pre každý SIMD chunk
+              - hodnota tohto argumentu by mala odpovedať dlžke vektora v HW vektorovom registri
+              - vzhľadom k tomu, že pri výpočte pracujeme s typom float (4B) na architektúre AVX ktorá disponuje registrami o veľkosti 32B je najvhodnejšia možnosť 8 (32/4).
+              - je nutné podotknúť, že neuvažujeme možnosť tzv. n-pumpingu, ktorý umožňuje vytvoriť vektor registrov, tým že tieto registre umiestni za seba
+-> notinbranch - deklaruje, že verzia funkcie SIMD sa nikdy nevyvolá zvnútra podmieneného príkazu SIMD slučky
+-> Dovětky umožnili generovať efektívnejšie SIMD verzie vektorizovanej funkcie, ktoré následne spôsobili výrazne zlepšenie výkonu.
+
+Krok 2: přístupy do paměti
+=============================
+a) S dovětky (Sepište všechny použité dovětky):
+-> uniform(inputSize, input), linear(weight:784), linear(weight:512), simdlen(8), notinbranch
+
+Celkový čas [s]:                        40.2321s    (network :: wall time)
+Výkon skalárních operací [MFLOPS]:      0.352242    (derived_FLOPS)
+Výkon vektorových operací [MFLOPS]:     5332.21     (derived_SP_vector_FLOPS)
+L1 miss [%]:                            5.77%       (derived_L1_DMR)
+L2 miss [%]:                            17.2%       (derived_L2_DMR)
+L3 miss [%]:                            0.0338%     (derived_L3_TMR)
+
+b) Bez dovětků
+Některé dovětky maji negativní dopad na výkon, přestože kompilátor tvrdí opak. Které?
+-> linear(weight:784), linear(weight:512)
+
+Celkový čas [s]:                        21.7949s    (network :: wall time)
+Výkon skalárních operací [MFLOPS]:      168.45      (derived_FLOPS)
+Výkon vektorových operací [MFLOPS]:     14984.1     (derived_SP_vector_FLOPS)
+L1 miss [%]:                            14.90%      (derived_L1_DMR)
+L2 miss [%]:                            47.9%       (derived_L2_DMR)
+L3 miss [%]:                            0.0621%     (derived_L3_TMR)
+
+Proč mají dovětky negativní efekt na výkon?
+(neklasifikovana odpověď, můžete vynechat, ale může vynést přiklonění k bodu u věcí které jsou na hraně :-) )
+===================================
+Dovětky majú negativný vplyv na výkon, pretože pri zadaní dvoch alebo viacerých konkretných lineárnych krokov 
+pri dovětku linear si prekladač vždy vyberie len jednu variantu pre celý beh programu. V prípade ak je zadaný 
+dovětok linear bez špecifikácie kroku, tak prekladač na základe dostupných informácií dokáže sám rozpoznať, že 
+v našom výpočte je jeho veľkost závislá na premennej inputSize, ktorá je zároveň uniform. Prekladač preto na
+základe týchto znalostí a toho aká vrstva sa práve vyhodnocuje, vygeneruje vždy tú správnu najvhodnejšiu variantu
+pre aktuálny beh výpočtu s krokom závislým na premennej inputSize.
+
+Krok 3.1: přesun #pragma omp simd
+===================================
+Celkový čas [s]:                        20.8857s    (network :: wall time)
+Výkon skalárních operací [MFLOPS]:      15.8152     (derived_FLOPS)
+Výkon vektorových operací [MFLOPS]:     15978.7     (derived_SP_vector_FLOPS)
+L1 miss [%]:                            16.6%       (derived_L1_DMR)
+L2 miss [%]:                            51.4%       (derived_L2_DMR)
+L3 miss [%]:                            0.0766%     (derived_L3_TMR)
+
+
+Jaký dovětek je potřeba přidat?
+-> reduction(+:bias)
+
+Krok 3.2: vykonání po vrstvách místo po obrázcích
+===================================
+Celkový čas [s]:                        20.6869s    (network :: wall time)
+Výkon skalárních operací [MFLOPS]:      15.8611     (derived_FLOPS)
+Výkon vektorových operací [MFLOPS]:     16058.2     (derived_SP_vector_FLOPS)
+L1 miss [%]:                            16.4%       (derived_L1_DMR)
+L2 miss [%]:                            55.0%       (derived_L2_DMR)
+L3 miss [%]:                            0.162%      (derived_L3_TMR)
+
+Popište, jaký dopad na výkon mají výpadky v cache.
+===================================
+Výpadky v cache spôsobujú zníženie výkonu a taktiež negatívne ovplyvňujú čas behu samotného výpočtu.
+Je to spôsobené tým, že v prípade výpadku v cache je nutné pristupovať do hlavnej pamäti, ktorá 
+je oproti cache pomalá a prináša tak zvýšenú mieru réžie pri načítaní potrebných dát.
+
+
+Krok 4: režie funkcí, zarovnání paměti
+===================================
+Celkový čas [s]:                        19.8397s    (network :: wall time)
+Výkon skalárních operací [MFLOPS]:      25.0168     (derived_FLOPS)
+Výkon vektorových operací [MFLOPS]:     10956.9     (derived_SP_vector_FLOPS)
+L1 miss [%]:                            16.5%       (derived_L1_DMR)
+L2 miss [%]:                            61.9%       (derived_L2_DMR)
+L3 miss [%]:                            0.162%      (derived_L3_TMR)
+
+
+Proč není zrychlení již výrazné? Na jaké typy problémů cílí tyto optimalizace?
+===================================
+Táto optimalizácia sa zameriava na odstránenie réžie spojenou s volaním funkcie a taktiež
+na zlepšenie výkonu pod vplyvom zarovnania dát v pamäti. 
+
+Volanie funkcie môže mať vplyv na výkonnosť programu, ak je doba vykonávania funkcie kratšia 
+ako doba prepínania z funkcie volajúceho na volanú funkciu (callee). Odstránenie réžie volania funkcií
+tak dáva zmysel vykonávať len vtedy, ak je samotná doba behu funkcie väčšia ako je doba réžie pri volaní 
+tejto funkcie. Pre funkcie ktoré sú veľké a/alebo vykonavajú zložité úlohy, je réžia volania funkcie 
+zvyčajne zanedbateľná v porovnaní s časom, ktorý funkcia potrebuje na vykonanie výpočtu.
+
+Zarovnanie dát je metóda, ktorá prinúti kompilátor vytvárať dátové objekty v pamäti na konkretných hraniciach
+bajtov. Deje sa to za účelom zvýšenia efektívnosti načítania dát a ich ukladania z a do procesoru. Procesory
+sú navrhnuté tak, aby dokázali efektívne presúvať dáta, ak sa tieto dáta nachádzajú na adresách, ktoré sú 
+práve na konkretných hraniciach. Kompilátor je následne schopný vykonávať optimalizácie, keď je známe, že 
+prístup k údajom je zarovnaný na isté hranice.
+
+Zrýchlenie však v našom prípade už nie je až tak výrazné z dôvodu, že réžia pri volaní funkcie v celkovom
+dôsledku ovplyvňuje výkon len minimálne, keďže funkcia evalNeuron strávi podstatnú časť doby pri vlastnom
+výpočte. Zarovnanie pamäti na veľkost blokov cache urýchli načítavanie a ukladanie dát z a do 
+procesora, vďaka čomu došlo k čiastočnému zrýchleniu prevádzaného výpočtu.
+
+Krok 4.1: odstránenie #pragma omp simd
+===================================
+Celkový čas [s]:                        18.304s     (network :: wall time)
+Výkon skalárních operací [MFLOPS]:      27.2393     (derived_FLOPS)
+Výkon vektorových operací [MFLOPS]:     16986.6     (derived_SP_vector_FLOPS)
+L1 miss [%]:                            20.7%       (derived_L1_DMR)
+L2 miss [%]:                            57.20%      (derived_L2_DMR)
+L3 miss [%]:                            0.148%      (derived_L3_TMR)
+
+Aký vplvyv na výkon má odstránenie pragmy?
+===================================
+Odstránenie pragmy pred najnvútornejším cyklom spôsobilo výrazne zlepšenie výkonu. Je to spôsobené 
+tým, že prekladač túto smyčku sám vektorizoval, pričom sa mu to podarilo efektívnejšie ako nami
+vynútenou vektorizáciou. Na základe porovnaní oboch optimalizačných reportov prekladača bolo 
+vypozorované, že v prípade nami vynútenou vektorizáciou bola síce nižšia cena vektorizácie (vector
+cost) a tým aj vyššie predpokladané zrýchlenie (speedup), avšak došlo k výraznemu zvýšeniu réžie 
+potrebnej k prevedeniu zvolenej vektorizácie (overhead).

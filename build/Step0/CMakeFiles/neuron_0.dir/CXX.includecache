@@ -1,0 +1,20 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/simon/School/AVS/Assignment1/Step0/neuron.cpp
+cstdlib
+-
+cstdio
+-
+math.h
+-
+neuron.h
+/home/simon/School/AVS/Assignment1/Step0/neuron.h
+
+/home/simon/School/AVS/Assignment1/Step0/neuron.h
+

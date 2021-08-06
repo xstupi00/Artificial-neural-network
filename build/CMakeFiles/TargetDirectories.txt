@@ -1,0 +1,7 @@
+/home/simon/School/AVS/Assignment1/build/CMakeFiles/rebuild_cache.dir
+/home/simon/School/AVS/Assignment1/build/CMakeFiles/edit_cache.dir
+/home/simon/School/AVS/Assignment1/build/Step0/CMakeFiles/edit_cache.dir
+/home/simon/School/AVS/Assignment1/build/Step0/CMakeFiles/rebuild_cache.dir
+/home/simon/School/AVS/Assignment1/build/Step0/CMakeFiles/ANN_0.dir
+/home/simon/School/AVS/Assignment1/build/Step0/CMakeFiles/neuron_0.dir
+/home/simon/School/AVS/Assignment1/build/Step0/CMakeFiles/main_0.dir
